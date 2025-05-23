@@ -3,7 +3,6 @@
 set -e
 
 # Config
-PROFILE="dev"
 REGION="us-east-1"
 FUNCTION_NAME="llmLambda"
 IMAGE_NAME="llm-lambda"
@@ -36,6 +35,5 @@ aws lambda update-function-code \
   --function-name $FUNCTION_NAME \
   --image-uri $IMAGE_URI \
   --region $REGION \
-  --profile $PROFILE
 
 echo "✅ Deployment complete!"

@@ -90,7 +90,6 @@ aws lambda invoke \
   --payload '{"text": "Deploying LLMs to Lambda"}' \
   --cli-binary-format raw-in-base64-out \
   --region us-east-1 \
-  --profile dev \
   response.json
 
 cat response.json
