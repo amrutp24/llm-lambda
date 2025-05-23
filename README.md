@@ -4,8 +4,7 @@ This project shows how to deploy a SentenceTransformer-based LLM inside an AWS L
 
 ---
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![License](https://img.shields.io/github/license/yourname/llm-lambda)
+![License](https://img.shields.io/github/license/amrutp24/llm-lambda)
 
 ---
 
