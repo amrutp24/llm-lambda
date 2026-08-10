@@ -19,11 +19,11 @@ This project shows how to deploy a SentenceTransformer-based LLM inside an AWS L
 
 ## 🔧 Changes since the original version
 
-The original version stopped building. It was fine when it shipped in May 2025 — the
-deployed image kept working — but `requirements.txt` pinned only five packages and let
-every transitive dependency float. By 2026 pip resolved `scikit-learn` to a release with no
-cp311 wheel, fell back to compiling from source, and failed because the Lambda base image
-has no C compiler. Pinning past that hit the same wall on `Pillow`.
+The original version stopped building. It was fine when it shipped in May 2025, but
+`requirements.txt` pinned only five packages and let every transitive dependency float. By
+2026 pip resolved `scikit-learn` to a release with no cp311 wheel, fell back to compiling
+from source, and failed because the Lambda base image has no C compiler. Pinning past that
+hit the same wall on `Pillow`.
 
 What changed:
 

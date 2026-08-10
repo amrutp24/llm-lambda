@@ -1,5 +1,5 @@
 resource "aws_iam_role" "lambda_exec" {
-  name = "llm-lambda-execution-role"
+  name = "${var.lambda_name}-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -28,6 +28,15 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 # ECR Repository
 resource "aws_ecr_repository" "llm_lambda" {
   name = var.lambda_name
+
+  # Without this, `terraform destroy` fails once an image has been pushed:
+  #   RepositoryNotEmptyException: ... cannot be deleted because it still
+  #   contains images
+  # leaving the repository and its images behind, still billed. This repo is
+  # meant to be stood up and torn down, so deleting images with it is correct.
+  # Do not copy this into a registry you care about — destroy will take the
+  # images with it.
+  force_delete = true
 }
 
 # Lambda Function (Container-based)
@@ -38,5 +47,18 @@ resource "aws_lambda_function" "llm_lambda" {
   image_uri     = var.image_uri # You must pass this in via tfvars or CLI
   timeout       = 60
   memory_size   = 2048
-  depends_on    = [aws_iam_role_policy_attachment.lambda_basic]
+
+  # Only /tmp is writable in a Lambda execution environment. Without this,
+  # huggingface fails to write its cache dir on every cold start and burns time
+  # inside the 10s init budget. Also set in the Dockerfile so the image behaves
+  # the same when run locally; set here too because changing the Dockerfile
+  # requires a rebuild and push, while this applies on the next apply.
+  environment {
+    variables = {
+      HF_HOME            = "/tmp"
+      TRANSFORMERS_CACHE = "/tmp"
+    }
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.lambda_basic]
 }

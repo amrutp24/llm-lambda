@@ -1,1 +1,23 @@
 app/model/*
+
+# Terraform
+# State can hold sensitive values; .terraform/ holds provider binaries.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local invoke output
+response.json
+
+# Python / build
+__pycache__/
+*.pyc
+.venv/
+venv/
