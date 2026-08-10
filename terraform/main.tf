@@ -20,10 +20,10 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "ecr_access" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
+# NOTE: AmazonEC2ContainerRegistryReadOnly was previously attached here. It is not
+# needed. Lambda pulls the container image itself before the function runs; the
+# execution role governs what the *function* can call, and this function calls
+# nothing. The policy granted read access to every ECR repository in the account.
 
 # ECR Repository
 resource "aws_ecr_repository" "llm_lambda" {
@@ -38,5 +38,5 @@ resource "aws_lambda_function" "llm_lambda" {
   image_uri     = var.image_uri # You must pass this in via tfvars or CLI
   timeout       = 60
   memory_size   = 2048
-  depends_on    = [aws_iam_role_policy_attachment.lambda_basic, aws_iam_role_policy_attachment.ecr_access]
+  depends_on    = [aws_iam_role_policy_attachment.lambda_basic]
 }

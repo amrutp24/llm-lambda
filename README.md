@@ -17,6 +17,56 @@ This project shows how to deploy a SentenceTransformer-based LLM inside an AWS L
 
 ---
 
+## 🔧 Changes since the original version
+
+The original version stopped building. It was fine when it shipped in May 2025 — the
+deployed image kept working — but `requirements.txt` pinned only five packages and let
+every transitive dependency float. By 2026 pip resolved `scikit-learn` to a release with no
+cp311 wheel, fell back to compiling from source, and failed because the Lambda base image
+has no C compiler. Pinning past that hit the same wall on `Pillow`.
+
+What changed:
+
+`requirements.txt` is now a full lock. All 29 resolved packages are pinned, not just the
+five top-level ones. Regenerate it from a known-good image with:
+
+```bash
+docker run --rm --entrypoint /bin/sh <image> \
+  -c "python3 -m pip list --format=freeze --path /var/task" | sort
+```
+
+torch is now the CPU build, `torch==2.0.1+cpu`. The default x86 wheel is compiled with
+CUDA enabled, so pip also pulled `nvidia-cudnn`, `nvidia-cublas`, `nvidia-nccl` and six
+others — 2.6 GB unpacked. Lambda has no GPU, and the handler never requested one, so none of
+it could ever execute. Removing it takes the image from **8.43 GB to 2.66 GB**. Note that
+Lambda's container image limit is 10 GB, so the original was within 1.6 GB of a hard ceiling.
+
+This needs the extra index in `requirements.txt`:
+
+```
+--extra-index-url https://download.pytorch.org/whl/cpu
+```
+
+`AmazonEC2ContainerRegistryReadOnly` is gone from the Lambda execution role. Lambda
+pulls the container image itself before your code runs; the execution role governs what the
+*function* calls at runtime, and this function calls nothing. The policy granted read access
+to every ECR repository in the account for no benefit. The `depends_on` in
+`aws_lambda_function.llm_lambda` was updated to match.
+
+`deploy_lambda.sh` no longer passes `--profile $PROFILE`. That variable was deleted from
+the config block but the flags were left behind, so the script expanded them to
+`--profile ""` and failed on the first AWS call. It now uses the standard credential chain,
+so `AWS_PROFILE=dev ./deploy_lambda.sh` works.
+
+Troubleshooting was rewritten. The old entry told you to raise `timeout` and
+`memory_size` for a first-invocation timeout. That hides the symptom. See the section below.
+
+Not done yet: arm64. The aarch64 torch wheel is 74 MB against x86's 620 MB because there is
+no CUDA on ARM, and Graviton is ~20% cheaper per GB-second. Untested here, so the build
+still targets `linux/amd64`.
+
+---
+
 ## 📁 Repo Structure (Updated)
 
 ```
@@ -117,7 +167,18 @@ Expected output:
 
 ## 🛠 Troubleshooting
 
-* ❌ *"Task timed out after 30.00 seconds"*: Increase `timeout` and `memory_size` in Terraform.
+* ❌ *"Task timed out after N seconds"* on the **first** invocation, then fine afterwards:
+  this is almost certainly the init phase, not your handler. Lambda limits `Init` to
+  10 seconds; if module-level code (importing torch, loading the model) runs longer, Lambda
+  discards the init and re-runs it inside your first invocation, billed against the function
+  timeout. Raising `timeout` hides it; it does not fix it. Check `Init Duration` in the
+  CloudWatch `REPORT` line and get it under 10s — the CPU-only torch build is the biggest
+  single win. See
+  [Lambda execution environment lifecycle](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html).
+* ❌ *pip tries to compile a package from source and fails with `no such file or directory: 'gcc'`*:
+  a dependency resolved to a version with no wheel for this Python version. The Lambda base
+  image has no compiler by design. Pin the offending package in `requirements.txt` — that
+  file is a full lock for this reason.
 * ❌ *"No module named 'sentence\_transformers'"*: Ensure dependencies are installed inside Docker image.
 * ❌ *"Unable to import module"*: Check file paths, and model folder structure.
 
