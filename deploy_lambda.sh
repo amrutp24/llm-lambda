@@ -9,15 +9,15 @@ IMAGE_NAME="llm-lambda"
 ROLE_NAME="llm-lambda-execution-role" # update if you named it differently
 
 echo "🔧 Getting AWS Account ID..."
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile $PROFILE)
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:latest"
 
 echo "🔄 Creating ECR repository if not exists..."
-aws ecr describe-repositories --repository-names $IMAGE_NAME --region $REGION --profile $PROFILE >/dev/null 2>&1 || \
-aws ecr create-repository --repository-name $IMAGE_NAME --region $REGION --profile $PROFILE
+aws ecr describe-repositories --repository-names $IMAGE_NAME --region $REGION >/dev/null 2>&1 || \
+aws ecr create-repository --repository-name $IMAGE_NAME --region $REGION
 
 echo "🔐 Logging in to ECR..."
-aws ecr get-login-password --region $REGION --profile $PROFILE | \
+aws ecr get-login-password --region $REGION | \
 docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
 echo "🐳 Building Docker image..."
@@ -34,6 +34,6 @@ echo "🛠️ Updating Lambda function code..."
 aws lambda update-function-code \
   --function-name $FUNCTION_NAME \
   --image-uri $IMAGE_URI \
-  --region $REGION \
+  --region $REGION
 
 echo "✅ Deployment complete!"
