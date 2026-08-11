@@ -45,8 +45,12 @@ resource "aws_lambda_function" "llm_lambda" {
   role          = aws_iam_role.lambda_exec.arn
   package_type  = "Image"
   image_uri     = var.image_uri # You must pass this in via tfvars or CLI
-  timeout       = 60
-  memory_size   = 2048
+  timeout       = var.timeout
+  memory_size   = var.memory_size
+
+  # Must match the image. Lambda rejects an arm64 image on an x86_64 function
+  # with an unhelpful error, and the default is x86_64.
+  architectures = [var.architecture]
 
   # Only /tmp is writable in a Lambda execution environment. Without this,
   # huggingface fails to write its cache dir on every cold start and burns time
@@ -57,6 +61,8 @@ resource "aws_lambda_function" "llm_lambda" {
     variables = {
       HF_HOME            = "/tmp"
       TRANSFORMERS_CACHE = "/tmp"
+      MODEL_PATH         = var.model_path
+      EMBEDDING_DIMS     = tostring(var.embedding_dims)
     }
   }
 

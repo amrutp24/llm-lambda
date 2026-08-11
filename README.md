@@ -61,9 +61,19 @@ so `AWS_PROFILE=dev ./deploy_lambda.sh` works.
 Troubleshooting was rewritten. The old entry told you to raise `timeout` and
 `memory_size` for a first-invocation timeout. That hides the symptom. See the section below.
 
-Not done yet: arm64. The aarch64 torch wheel is 74 MB against x86's 620 MB because there is
-no CUDA on ARM, and Graviton is ~20% cheaper per GB-second. Untested here, so the build
-still targets `linux/amd64`.
+arm64 builds cleanly and is ~400 MB smaller (image 2.35 GB vs 2.88 GB; torch unpacks to
+319 MB vs 722 MB), plus Graviton is ~20% cheaper per GB-second. Note `torch==2.0.1+cpu` is
+x86-only — aarch64 needs the stock PyPI wheel, which is already CPU-only since there is no
+CUDA on ARM. `requirements.txt` uses environment markers to pick the right one. Build it
+with:
+
+```bash
+docker buildx build --platform linux/arm64 -t llm-lambda:arm64 --load .
+```
+
+The deploy script still hardcodes `--platform linux/amd64`, and `architectures` is not set
+on the Lambda resource, so switching targets means changing both. Neither arm64 nor the
+lazy-loading change has been measured on real Lambda yet.
 
 ---
 

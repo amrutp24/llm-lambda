@@ -12,6 +12,10 @@
 # torch is the CPU build. The default x86 wheel pulls ~2.6 GB of CUDA libraries
 # that cannot execute on Lambda; +cpu drops them and takes the image from
 # 8.43 GB to 2.66 GB.
+#
+# The +cpu variant only exists for x86_64. On aarch64 there is no CUDA to strip,
+# so the stock PyPI wheel is already CPU-only (and 74 MB rather than 620 MB).
+# The markers below pick the right one so this file works for both targets.
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 certifi==2026.7.22
@@ -38,7 +42,8 @@ sentence-transformers==2.4.0
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.15.2
-torch==2.0.1+cpu
+torch==2.0.1+cpu ; platform_machine == "x86_64"
+torch==2.0.1 ; platform_machine == "aarch64"
 tqdm==4.70.0
 transformers==4.35.2
 typing_extensions==4.16.0

@@ -1,23 +1,52 @@
+# Model weights - downloaded by build_model.py, ~129 MB, not source
 app/model/*
 
 # Terraform
 # State can hold sensitive values; .terraform/ holds provider binaries.
 .terraform/
+.terraform.tfstate.lock.info
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
 crash.log
 crash.*.log
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+tfplan
+*.tfplan
 
-# Local invoke output
+# Lambda invoke output. `aws lambda invoke` writes its response to a positional
+# filename, so these accumulate under whatever name you happened to use.
 response.json
+*.response.json
+r[0-9]*.json
+out.json
+
+# Docker / build scratch
+Dockerfile.*
+!Dockerfile
+*.log
 
 # Python / build
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Credentials - never commit; belt and braces alongside the patterns above
+.env
+.env.*
+*.pem
+*.key
+credentials
