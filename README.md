@@ -19,61 +19,62 @@ This project shows how to deploy a SentenceTransformer-based LLM inside an AWS L
 
 ## 🔧 Changes since the original version
 
-The original version stopped building. It was fine when it shipped in May 2025, but
-`requirements.txt` pinned only five packages and let every transitive dependency float. By
-2026 pip resolved `scikit-learn` to a release with no cp311 wheel, fell back to compiling
-from source, and failed because the Lambda base image has no C compiler. Pinning past that
-hit the same wall on `Pillow`.
+The original stopped building. `requirements.txt` pinned five packages and let the rest
+float. `scikit-learn` later dropped its cp311 wheel, pip fell back to a source build, and
+the Lambda base image has no compiler. Same again for `Pillow` behind it.
 
 What changed:
 
-`requirements.txt` is now a full lock. All 29 resolved packages are pinned, not just the
-five top-level ones. Regenerate it from a known-good image with:
+- `requirements.txt` is a full 29-package lock, not five top-level pins. Regenerate it from
+  a working image with `pip list --format=freeze --path /var/task | sort`.
+- torch is the CPU build. The default x86 wheel pulls ~2.6 GB of CUDA libraries that cannot
+  run on Lambda. Image drops from 8.43 GB to 2.66 GB. The limit is 10 GB, so the original
+  was closer to it than is comfortable. Needs
+  `--extra-index-url https://download.pytorch.org/whl/cpu`.
+- The model and its imports load inside the handler. Lambda caps `Init` at 10 seconds and
+  module scope took ~17.5 s, so init timed out, was thrown away, and ran again inside the
+  first invocation for 43 s billed. Init is now 109-514 ms. Cold starts are still 5-16 s:
+  this fixes the double load, not the load.
+- The Dockerfile installs requirements before `COPY app/ .`, so editing the handler no
+  longer rebuilds every dependency. `HF_HOME` and `TRANSFORMERS_CACHE` point at `/tmp`,
+  the only writable path.
+- The handler returns the full 384-dim vector. It used to truncate to 5. Set
+  `EMBEDDING_DIMS` to truncate again, `MODEL_PATH` to point somewhere else.
+- Terraform exposes `memory_size`, `timeout`, `architecture`, `model_path` and
+  `embedding_dims`. The role name derives from `lambda_name` so the module can be applied
+  more than once per account, and the ECR repo sets `force_delete`, without which `destroy`
+  fails as soon as an image exists.
+- `AmazonEC2ContainerRegistryReadOnly` is off the execution role. Lambda pulls the image
+  itself; the role governs what the function calls, and this one calls nothing.
+- `deploy_lambda.sh` no longer passes an undefined `--profile`, and takes `REGION`,
+  `FUNCTION_NAME`, `IMAGE_NAME` and `ARCH` from the environment.
+- Troubleshooting no longer tells you to raise the timeout. That stops the error appearing
+  and leaves the doubled init in place.
+
+### arm64
+
+`torch==2.0.1+cpu` is x86-only. aarch64 uses the stock PyPI wheel, already CPU-only because
+there is no CUDA on ARM, and `requirements.txt` picks between them with environment markers.
+
+Build and deploy targets must match; Lambda rejects an arm64 image on an x86_64 function.
 
 ```bash
-docker run --rm --entrypoint /bin/sh <image> \
-  -c "python3 -m pip list --format=freeze --path /var/task" | sort
+ARCH=arm64 ./deploy_lambda.sh
+terraform apply -var 'architecture=arm64' -var "image_uri=$IMAGE_URI"
 ```
 
-torch is now the CPU build, `torch==2.0.1+cpu`. The default x86 wheel is compiled with
-CUDA enabled, so pip also pulled `nvidia-cudnn`, `nvidia-cublas`, `nvidia-nccl` and six
-others — 2.6 GB unpacked. Lambda has no GPU, and the handler never requested one, so none of
-it could ever execute. Removing it takes the image from **8.43 GB to 2.66 GB**. Note that
-Lambda's container image limit is 10 GB, so the original was within 1.6 GB of a hard ceiling.
+Measured on Lambda at 2048 MB, six or seven cold starts each, discarding the first two while
+the image cache warms:
 
-This needs the extra index in `requirements.txt`:
+| | x86_64 | arm64 |
+| --- | --- | --- |
+| median cold start | 6.83 s | 5.78 s |
+| range | 5.16 – 16.49 s | 4.34 – 14.24 s |
+| init | 146 – 514 ms | 109 – 372 ms |
+| first invoke after deploy | 56.7 s | 28.3 s |
 
-```
---extra-index-url https://download.pytorch.org/whl/cpu
-```
-
-`AmazonEC2ContainerRegistryReadOnly` is gone from the Lambda execution role. Lambda
-pulls the container image itself before your code runs; the execution role governs what the
-*function* calls at runtime, and this function calls nothing. The policy granted read access
-to every ECR repository in the account for no benefit. The `depends_on` in
-`aws_lambda_function.llm_lambda` was updated to match.
-
-`deploy_lambda.sh` no longer passes `--profile $PROFILE`. That variable was deleted from
-the config block but the flags were left behind, so the script expanded them to
-`--profile ""` and failed on the first AWS call. It now uses the standard credential chain,
-so `AWS_PROFILE=dev ./deploy_lambda.sh` works.
-
-Troubleshooting was rewritten. The old entry told you to raise `timeout` and
-`memory_size` for a first-invocation timeout. That hides the symptom. See the section below.
-
-arm64 builds cleanly and is ~400 MB smaller (image 2.35 GB vs 2.88 GB; torch unpacks to
-319 MB vs 722 MB), plus Graviton is ~20% cheaper per GB-second. Note `torch==2.0.1+cpu` is
-x86-only — aarch64 needs the stock PyPI wheel, which is already CPU-only since there is no
-CUDA on ARM. `requirements.txt` uses environment markers to pick the right one. Build it
-with:
-
-```bash
-docker buildx build --platform linux/arm64 -t llm-lambda:arm64 --load .
-```
-
-The deploy script still hardcodes `--platform linux/amd64`, and `architectures` is not set
-on the Lambda resource, so switching targets means changing both. Neither arm64 nor the
-lazy-loading change has been measured on real Lambda yet.
+The ranges overlap, so treat the median difference as directional rather than precise. The
+price difference is not: Graviton is ~20% cheaper per GB-second.
 
 ---
 
